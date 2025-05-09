@@ -1,7 +1,8 @@
 // === Constants ===
 const BASE = "https://fsa-crud-2aa9294fe819.herokuapp.com/api";
-const COHORT = ""; // Make sure to change this!
-const API = BASE + COHORT;
+const COHORT = "/2504-Lucky";
+const RESOURCE = "/events";
+const API = BASE + COHORT + RESOURCE;
 
 // === State ===
 let parties = [];
@@ -12,7 +13,7 @@ let guests = [];
 /** Updates state with all parties from the API */
 async function getParties() {
   try {
-    const response = await fetch(API + "/events");
+    const response = await fetch(API);
     const result = await response.json();
     parties = result.data;
     render();
@@ -24,7 +25,7 @@ async function getParties() {
 /** Updates state with a single party from the API */
 async function getParty(id) {
   try {
-    const response = await fetch(API + "/events/" + id);
+    const response = await fetch(`${API}/${id}`);
     const result = await response.json();
     selectedParty = result.data;
     render();
@@ -36,7 +37,7 @@ async function getParty(id) {
 /** Updates state with all RSVPs from the API */
 async function getRsvps() {
   try {
-    const response = await fetch(API + "/rsvps");
+    const response = await fetch(API.replace("/events", "/rsvps"));
     const result = await response.json();
     rsvps = result.data;
     render();
@@ -48,7 +49,7 @@ async function getRsvps() {
 /** Updates state with all guests from the API */
 async function getGuests() {
   try {
-    const response = await fetch(API + "/guests");
+    const response = await fetch(API.replace("/events", "/guests"));
     const result = await response.json();
     guests = result.data;
     render();
@@ -67,9 +68,7 @@ function PartyListItem(party) {
     $li.classList.add("selected");
   }
 
-  $li.innerHTML = `
-    <a href="#selected">${party.name}</a>
-  `;
+  $li.innerHTML = `<a href="#selected">${party.name}</a>`;
   $li.addEventListener("click", () => getParty(party.id));
   return $li;
 }
@@ -81,6 +80,25 @@ function PartyList() {
 
   const $parties = parties.map(PartyListItem);
   $ul.replaceChildren(...$parties);
+
+  return $ul;
+}
+
+/** List of guests attending the selected party */
+function GuestList() {
+  const $ul = document.createElement("ul");
+  const guestsAtParty = guests.filter((guest) =>
+    rsvps.find(
+      (rsvp) => rsvp.guestId === guest.id && rsvp.eventId === selectedParty.id
+    )
+  );
+
+  const $guests = guestsAtParty.map((guest) => {
+    const $guest = document.createElement("li");
+    $guest.textContent = guest.name;
+    return $guest;
+  });
+  $ul.replaceChildren(...$guests);
 
   return $ul;
 }
@@ -105,27 +123,62 @@ function SelectedParty() {
   `;
   $party.querySelector("GuestList").replaceWith(GuestList());
 
+  const deleteBtn = document.createElement("button");
+  deleteBtn.textContent = "Delete Party";
+  deleteBtn.style.marginTop = "1em";
+  deleteBtn.addEventListener("click", async () => {
+    try {
+      await fetch(`${API}/${selectedParty.id}`, {
+        method: "DELETE",
+      });
+      selectedParty = null;
+      await getParties();
+    } catch (e) {
+      console.error("Failed to delete party:", e);
+    }
+  });
+
+  $party.appendChild(deleteBtn);
   return $party;
 }
 
-/** List of guests attending the selected party */
-function GuestList() {
-  const $ul = document.createElement("ul");
-  const guestsAtParty = guests.filter((guest) =>
-    rsvps.find(
-      (rsvp) => rsvp.guestId === guest.id && rsvp.eventId === selectedParty.id
-    )
-  );
+/** A form to create a new party */
+function NewPartyForm() {
+  const $form = document.createElement("form");
+  $form.innerHTML = `
+    <h3>Add New Party</h3>
+    <input name="name" placeholder="Party Name" required />
+    <textarea name="description" placeholder="Description" required></textarea>
+    <input type="date" name="date" required />
+    <input name="location" placeholder="Location" required />
+    <button type="submit">Create Party</button>
+  `;
 
-  // Simple components can also be created anonymously:
-  const $guests = guestsAtParty.map((guest) => {
-    const $guest = document.createElement("li");
-    $guest.textContent = guest.name;
-    return $guest;
+  $form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const formData = new FormData($form);
+
+    const newParty = {
+      name: formData.get("name"),
+      description: formData.get("description"),
+      date: new Date(formData.get("date")).toISOString(),
+      location: formData.get("location"),
+    };
+
+    try {
+      await fetch(API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newParty),
+      });
+      await getParties();
+      $form.reset();
+    } catch (e) {
+      console.error("Error creating party:", e);
+    }
   });
-  $ul.replaceChildren(...$guests);
 
-  return $ul;
+  return $form;
 }
 
 // === Render ===
@@ -136,19 +189,22 @@ function render() {
     <main>
       <section>
         <h2>Upcoming Parties</h2>
-        <PartyList></PartyList>
+        <div id="party-list"></div>
+        <div id="party-form"></div>
       </section>
       <section id="selected">
         <h2>Party Details</h2>
-        <SelectedParty></SelectedParty>
+        <div id="party-details"></div>
       </section>
     </main>
   `;
 
-  $app.querySelector("PartyList").replaceWith(PartyList());
-  $app.querySelector("SelectedParty").replaceWith(SelectedParty());
+  document.querySelector("#party-list").replaceWith(PartyList());
+  document.querySelector("#party-form").replaceWith(NewPartyForm());
+  document.querySelector("#party-details").replaceWith(SelectedParty());
 }
 
+// === Init ===
 async function init() {
   await getParties();
   await getRsvps();
